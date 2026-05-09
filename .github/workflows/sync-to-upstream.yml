@@ -1,0 +1,112 @@
+name: Sync main to upstream
+
+# This workflow automatically opens (or updates) a pull request from this
+# fork's `main` to the upstream repo's `main` whenever this fork's `main`
+# is updated.
+#
+# Required repository secret:
+#   UPSTREAM_PAT
+#       A GitHub Personal Access Token (fine-grained recommended) that is
+#       authorized on the upstream repo with at least:
+#         - Contents: Read
+#         - Pull requests: Read and Write
+#       For a fine-grained token, generate it from an account that has
+#       write access to UPSTREAM_REPO (e.g. the upstream's owner or a
+#       collaborator with Triage+ permissions on PRs).
+#
+# To trigger manually, run "Sync main to upstream" from the Actions tab.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: dirazerita-beep/devsync
+  UPSTREAM_BASE: main
+
+jobs:
+  sync-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify UPSTREAM_PAT is configured
+        env:
+          UPSTREAM_PAT: ${{ secrets.UPSTREAM_PAT }}
+        run: |
+          if [ -z "${UPSTREAM_PAT}" ]; then
+            echo "::error::Repository secret UPSTREAM_PAT is not set."
+            echo "Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Open or update upstream PR
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_PAT }}
+        run: |
+          set -euo pipefail
+
+          fork_owner="${GITHUB_REPOSITORY%/*}"
+          fork_main_sha="$(git rev-parse HEAD)"
+          fork_main_short="$(git rev-parse --short HEAD)"
+
+          body=$(cat <<EOF
+          Automated sync from \`${GITHUB_REPOSITORY}\` \`main\` (latest commit: \`${fork_main_short}\`).
+
+          This PR is opened by the \`Sync main to upstream\` GitHub Actions workflow whenever \`${GITHUB_REPOSITORY}\` \`main\` is updated. Review the file changes below and merge to bring upstream in sync.
+          EOF
+          )
+
+          # If there's already an open PR with this fork's main as head,
+          # just refresh its body so it reflects the latest commit.
+          existing="$(gh pr list \
+            --repo "${UPSTREAM_REPO}" \
+            --head "${fork_owner}:main" \
+            --state open \
+            --json number \
+            --jq '.[0].number' || true)"
+
+          if [ -n "${existing}" ]; then
+            echo "Existing upstream PR #${existing} found; updating description."
+            gh pr edit "${existing}" \
+              --repo "${UPSTREAM_REPO}" \
+              --body "${body}"
+            echo "url=https://github.com/${UPSTREAM_REPO}/pull/${existing}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          # No existing PR. Try to create one. If there's no diff with
+          # upstream, gh exits non-zero; treat that as a successful no-op.
+          set +e
+          create_output="$(gh pr create \
+            --repo "${UPSTREAM_REPO}" \
+            --head "${fork_owner}:main" \
+            --base "${UPSTREAM_BASE}" \
+            --title "Sync from ${GITHUB_REPOSITORY} (${fork_main_short})" \
+            --body "${body}" 2>&1)"
+          create_status=$?
+          set -e
+
+          echo "${create_output}"
+
+          if [ "${create_status}" -eq 0 ]; then
+            echo "Created upstream PR."
+            echo "${create_output}" | grep -E '^https?://' | head -1 \
+              >> "${GITHUB_STEP_SUMMARY}" || true
+            exit 0
+          fi
+
+          if echo "${create_output}" | grep -qiE 'No commits between|no new commits'; then
+            echo "Fork is already in sync with upstream; nothing to do."
+            exit 0
+          fi
+
+          echo "::error::gh pr create failed (exit ${create_status})."
+          exit "${create_status}"
