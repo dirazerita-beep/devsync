@@ -1,23 +1,42 @@
 from __future__ import annotations
 
 import os
+import platform
 import queue
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, List, Optional
 
 try:
     import tkinter as tk
-    from tkinter import filedialog, messagebox, scrolledtext, ttk
+    from tkinter import filedialog, messagebox, scrolledtext
+
+    import ttkbootstrap as tb
+    from ttkbootstrap.constants import (
+        BOTH,
+        DANGER,
+        END,
+        INFO,
+        LEFT,
+        OUTLINE,
+        PRIMARY,
+        RIGHT,
+        SECONDARY,
+        SUCCESS,
+        WARNING,
+        WORD,
+        X,
+        Y,
+    )
 except ModuleNotFoundError as exc:
-    tk = None
-    filedialog = None
-    messagebox = None
-    scrolledtext = None
-    ttk = None
-    TKINTER_IMPORT_ERROR = exc
+    tk = None  # type: ignore[assignment]
+    filedialog = None  # type: ignore[assignment]
+    messagebox = None  # type: ignore[assignment]
+    scrolledtext = None  # type: ignore[assignment]
+    tb = None  # type: ignore[assignment]
+    GUI_IMPORT_ERROR: Optional[ModuleNotFoundError] = exc
 else:
-    TKINTER_IMPORT_ERROR = None
+    GUI_IMPORT_ERROR = None
 
 from devsync import (
     DevsyncError,
@@ -34,121 +53,473 @@ from devsync import (
 )
 
 
+LIGHT_THEME = "cosmo"
+DARK_THEME = "darkly"
+
+if platform.system() == "Windows":
+    UI_FONT_FAMILY = "Segoe UI"
+    MONO_FONT_FAMILY = "Consolas"
+elif platform.system() == "Darwin":
+    UI_FONT_FAMILY = "SF Pro Text"
+    MONO_FONT_FAMILY = "Menlo"
+else:
+    UI_FONT_FAMILY = "DejaVu Sans"
+    MONO_FONT_FAMILY = "DejaVu Sans Mono"
+
+FONT_TITLE = (UI_FONT_FAMILY, 17, "bold")
+FONT_SUBTITLE = (UI_FONT_FAMILY, 9)
+FONT_SECTION = (UI_FONT_FAMILY, 10, "bold")
+FONT_LABEL = (UI_FONT_FAMILY, 9)
+FONT_VALUE = (UI_FONT_FAMILY, 10)
+FONT_VALUE_BOLD = (UI_FONT_FAMILY, 10, "bold")
+FONT_CHIP = (UI_FONT_FAMILY, 9, "bold")
+FONT_BUTTON = (UI_FONT_FAMILY, 9, "bold")
+FONT_MONO = (MONO_FONT_FAMILY, 9)
+
+
 class DevsyncGui:
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: "tb.Window") -> None:
         self.root = root
         self.root.title("devsync")
-        self.root.geometry("920x680")
-        self.output_queue: queue.Queue[str] = queue.Queue()
+        self.root.geometry("1100x820")
+        self.root.minsize(900, 700)
+        self.output_queue: "queue.Queue[str]" = queue.Queue()
 
         self.profile_var = tk.StringVar()
         self.repo_var = tk.StringVar()
         self.base_dir_var = tk.StringVar(value=str(Path.cwd()))
 
+        self.status_profile_var = tk.StringVar(value="-")
+        self.status_user_var = tk.StringVar(value="-")
+        self.status_repo_var = tk.StringVar(value="-")
+        self.status_branch_var = tk.StringVar(value="-")
+        self.header_chip_var = tk.StringVar(value="No active profile")
+
+        self.is_dark = False
+        self._status_dots: List[tuple["tb.Label", Callable[[], str]]] = []
+
+        self._configure_styles()
         self._build()
         self.refresh_all()
         self._poll_output()
 
+    def _configure_styles(self) -> None:
+        style = self.root.style
+        style.configure("TButton", font=FONT_BUTTON)
+        style.configure("TLabel", font=FONT_LABEL)
+        style.configure("TEntry", padding=6)
+        style.configure("TCombobox", padding=4)
+        style.configure(
+            "Card.TLabelframe",
+            borderwidth=1,
+            relief="solid",
+            padding=14,
+        )
+        style.configure(
+            "Card.TLabelframe.Label",
+            font=FONT_SECTION,
+        )
+        style.configure(
+            "Section.TLabel",
+            font=FONT_SECTION,
+        )
+        style.configure(
+            "Muted.TLabel",
+            font=FONT_LABEL,
+            foreground="#6b7280",
+        )
+        style.configure(
+            "Value.TLabel",
+            font=FONT_VALUE_BOLD,
+        )
+        style.configure(
+            "Header.TFrame",
+            background=style.colors.primary,
+        )
+        style.configure(
+            "HeaderTitle.TLabel",
+            font=FONT_TITLE,
+            background=style.colors.primary,
+            foreground="#ffffff",
+        )
+        style.configure(
+            "HeaderSubtitle.TLabel",
+            font=FONT_SUBTITLE,
+            background=style.colors.primary,
+            foreground="#e5e7eb",
+        )
+        style.configure(
+            "HeaderChip.TLabel",
+            font=FONT_CHIP,
+            background="#ffffff",
+            foreground=style.colors.primary,
+            padding=(12, 4),
+        )
+        style.configure(
+            "TNotebook.Tab",
+            padding=(18, 9),
+            font=FONT_BUTTON,
+        )
+        style.configure(
+            "Treeview",
+            rowheight=26,
+            font=FONT_VALUE,
+        )
+        style.configure(
+            "Treeview.Heading",
+            font=FONT_BUTTON,
+            padding=(8, 6),
+        )
+
     def _build(self) -> None:
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        outer = tb.Frame(self.root)
+        outer.pack(fill=BOTH, expand=True)
 
-        main_tab = ttk.Frame(notebook)
-        profiles_tab = ttk.Frame(notebook)
-        handoff_tab = ttk.Frame(notebook)
-        notebook.add(main_tab, text="Repo Sync")
-        notebook.add(profiles_tab, text="Profiles")
-        notebook.add(handoff_tab, text="Handoff")
+        self._build_header(outer)
+        self._build_body(outer)
 
-        self._build_main_tab(main_tab)
+    def _build_header(self, parent: "tb.Frame") -> None:
+        header = tk.Frame(parent, bg=self.root.style.colors.primary)
+        header.pack(fill=X, side=tk.TOP)
+
+        inner = tk.Frame(header, bg=self.root.style.colors.primary)
+        inner.pack(fill=X, padx=20, pady=14)
+
+        left = tk.Frame(inner, bg=self.root.style.colors.primary)
+        left.pack(side=LEFT, fill=Y)
+
+        title = tk.Label(
+            left,
+            text="\u26a1  devsync",
+            font=FONT_TITLE,
+            bg=self.root.style.colors.primary,
+            fg="#ffffff",
+        )
+        title.pack(anchor="w")
+
+        subtitle = tk.Label(
+            left,
+            text="Multi-account GitHub credentials & Devin handoff manager",
+            font=FONT_SUBTITLE,
+            bg=self.root.style.colors.primary,
+            fg="#e5e7eb",
+        )
+        subtitle.pack(anchor="w", pady=(2, 0))
+
+        right = tk.Frame(inner, bg=self.root.style.colors.primary)
+        right.pack(side=RIGHT, fill=Y)
+
+        self.header_chip = tk.Label(
+            right,
+            textvariable=self.header_chip_var,
+            font=FONT_CHIP,
+            bg="#ffffff",
+            fg=self.root.style.colors.primary,
+            padx=12,
+            pady=4,
+        )
+        self.header_chip.pack(side=LEFT, padx=(0, 12))
+
+        self.theme_btn = tb.Button(
+            right,
+            text="\u263d  Dark",
+            bootstyle=(OUTLINE, "light"),
+            command=self.toggle_theme,
+            width=10,
+        )
+        self.theme_btn.pack(side=LEFT)
+
+        self._header_widgets = [header, inner, left, right, title, subtitle]
+
+    def _build_body(self, parent: "tb.Frame") -> None:
+        body = tb.Frame(parent, padding=(16, 14, 16, 14))
+        body.pack(fill=BOTH, expand=True)
+
+        # Pack the log first so it claims its preferred height before the
+        # notebook expands to fill the rest.
+        self._build_log(body)
+
+        self.notebook = tb.Notebook(body, bootstyle=PRIMARY)
+        self.notebook.pack(fill=BOTH, expand=True, side=tk.TOP)
+
+        repo_tab = tb.Frame(self.notebook, padding=(2, 14, 2, 2))
+        profiles_tab = tb.Frame(self.notebook, padding=(2, 14, 2, 2))
+        handoff_tab = tb.Frame(self.notebook, padding=(2, 14, 2, 2))
+
+        self.notebook.add(repo_tab, text="  Repo Sync  ")
+        self.notebook.add(profiles_tab, text="  Profiles  ")
+        self.notebook.add(handoff_tab, text="  Handoff  ")
+
+        self._build_repo_tab(repo_tab)
         self._build_profiles_tab(profiles_tab)
         self._build_handoff_tab(handoff_tab)
 
-        output_frame = ttk.LabelFrame(self.root, text="Log")
-        output_frame.pack(fill=tk.BOTH, expand=False, padx=10, pady=(0, 10))
-        self.output = scrolledtext.ScrolledText(output_frame, height=8, wrap=tk.WORD)
-        self.output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+    # ------------------------------------------------------------------ tabs
+    def _build_repo_tab(self, parent: "tb.Frame") -> None:
+        parent.columnconfigure(0, weight=1)
 
-    def _build_main_tab(self, frame: ttk.Frame) -> None:
-        frame.columnconfigure(1, weight=1)
+        config_card = tb.Labelframe(parent, text="  Configuration  ", style="Card.TLabelframe")
+        config_card.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        config_card.columnconfigure(1, weight=1)
 
-        ttk.Label(frame, text="Profile").grid(row=0, column=0, sticky="w", padx=8, pady=8)
-        self.profile_combo = ttk.Combobox(frame, textvariable=self.profile_var, state="readonly")
-        self.profile_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=8)
-        ttk.Button(frame, text="Refresh", command=self.refresh_all).grid(row=0, column=2, sticky="ew", padx=8, pady=8)
-
-        ttk.Label(frame, text="GitHub repo URL").grid(row=1, column=0, sticky="w", padx=8, pady=8)
-        ttk.Entry(frame, textvariable=self.repo_var).grid(row=1, column=1, sticky="ew", padx=8, pady=8)
-        ttk.Button(frame, text="Save Default Repo", command=self.save_default_repo).grid(
-            row=1, column=2, sticky="ew", padx=8, pady=8
+        self._row_label(config_card, "Profile", 0)
+        self.profile_combo = tb.Combobox(
+            config_card,
+            textvariable=self.profile_var,
+            state="readonly",
         )
+        self.profile_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
+        tb.Button(
+            config_card,
+            text="\u21bb  Refresh",
+            bootstyle=(OUTLINE, PRIMARY),
+            command=self.refresh_all,
+            width=12,
+        ).grid(row=0, column=2, sticky="ew", padx=(8, 0), pady=6)
 
-        ttk.Label(frame, text="Local parent folder").grid(row=2, column=0, sticky="w", padx=8, pady=8)
-        ttk.Entry(frame, textvariable=self.base_dir_var).grid(row=2, column=1, sticky="ew", padx=8, pady=8)
-        ttk.Button(frame, text="Browse", command=self.choose_base_dir).grid(row=2, column=2, sticky="ew", padx=8, pady=8)
-
-        buttons = ttk.Frame(frame)
-        buttons.grid(row=3, column=0, columnspan=3, sticky="ew", padx=8, pady=8)
-        buttons.columnconfigure((0, 1, 2, 3), weight=1)
-        ttk.Button(buttons, text="Clone / Pull Repo", command=self.use_selected_profile).grid(
-            row=0, column=0, sticky="ew", padx=4
+        self._row_label(config_card, "GitHub repo URL", 1)
+        tb.Entry(config_card, textvariable=self.repo_var).grid(
+            row=1, column=1, sticky="ew", padx=8, pady=6
         )
-        ttk.Button(buttons, text="Show Status", command=self.show_status).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(buttons, text="Open Repo Folder", command=self.open_repo_folder).grid(
-            row=0, column=2, sticky="ew", padx=4
+        tb.Button(
+            config_card,
+            text="Save Default Repo",
+            bootstyle=(OUTLINE, PRIMARY),
+            command=self.save_default_repo,
+            width=18,
+        ).grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=6)
+
+        self._row_label(config_card, "Local parent folder", 2)
+        tb.Entry(config_card, textvariable=self.base_dir_var).grid(
+            row=2, column=1, sticky="ew", padx=8, pady=6
         )
-        ttk.Button(buttons, text="Copy Handoff", command=self.copy_handoff).grid(row=0, column=3, sticky="ew", padx=4)
+        tb.Button(
+            config_card,
+            text="Browse\u2026",
+            bootstyle=(OUTLINE, PRIMARY),
+            command=self.choose_base_dir,
+            width=12,
+        ).grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=6)
 
-        status_frame = ttk.LabelFrame(frame, text="Current status")
-        status_frame.grid(row=4, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
-        frame.rowconfigure(4, weight=1)
-        self.status_tree = ttk.Treeview(status_frame, columns=("field", "value"), show="headings", height=6)
-        self.status_tree.heading("field", text="Field")
-        self.status_tree.heading("value", text="Value")
-        self.status_tree.column("field", width=160, anchor="w")
-        self.status_tree.column("value", width=600, anchor="w")
-        self.status_tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        actions_card = tb.Labelframe(parent, text="  Actions  ", style="Card.TLabelframe")
+        actions_card.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        for col in range(4):
+            actions_card.columnconfigure(col, weight=1)
 
-    def _build_profiles_tab(self, frame: ttk.Frame) -> None:
-        frame.columnconfigure(1, weight=1)
-        ttk.Label(frame, text="Profile name").grid(row=0, column=0, sticky="w", padx=8, pady=8)
+        tb.Button(
+            actions_card,
+            text="\u21ca  Clone / Pull Repo",
+            bootstyle=PRIMARY,
+            command=self.use_selected_profile,
+        ).grid(row=0, column=0, sticky="ew", padx=4, pady=2)
+        tb.Button(
+            actions_card,
+            text="\u24d8  Show Status",
+            bootstyle=INFO,
+            command=self.show_status,
+        ).grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+        tb.Button(
+            actions_card,
+            text="\U0001f4c1  Open Repo Folder",
+            bootstyle=SECONDARY,
+            command=self.open_repo_folder,
+        ).grid(row=0, column=2, sticky="ew", padx=4, pady=2)
+        tb.Button(
+            actions_card,
+            text="\u2398  Copy Handoff",
+            bootstyle=SUCCESS,
+            command=self.copy_handoff,
+        ).grid(row=0, column=3, sticky="ew", padx=4, pady=2)
+
+        status_card = tb.Labelframe(parent, text="  Current Status  ", style="Card.TLabelframe")
+        status_card.grid(row=2, column=0, sticky="nsew")
+        parent.rowconfigure(2, weight=1)
+        status_card.columnconfigure(2, weight=1)
+
+        self._status_dots = []
+        self._status_row(status_card, 0, "Active profile", self.status_profile_var,
+                         lambda: self.status_profile_var.get())
+        self._status_row(status_card, 1, "Git user", self.status_user_var,
+                         lambda: self.status_user_var.get())
+        self._status_row(status_card, 2, "Current repo", self.status_repo_var,
+                         lambda: self.status_repo_var.get())
+        self._status_row(status_card, 3, "Current branch", self.status_branch_var,
+                         lambda: self.status_branch_var.get())
+
+    def _build_profiles_tab(self, parent: "tb.Frame") -> None:
+        parent.columnconfigure(0, weight=1)
+
+        form_card = tb.Labelframe(parent, text="  Add or Update Profile  ", style="Card.TLabelframe")
+        form_card.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        form_card.columnconfigure(1, weight=1)
+
         self.new_profile_name = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.new_profile_name).grid(row=0, column=1, sticky="ew", padx=8, pady=8)
-
-        ttk.Label(frame, text="GitHub token").grid(row=1, column=0, sticky="w", padx=8, pady=8)
         self.new_token = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.new_token, show="*").grid(row=1, column=1, sticky="ew", padx=8, pady=8)
-
-        ttk.Label(frame, text="Git user.name").grid(row=2, column=0, sticky="w", padx=8, pady=8)
         self.new_git_name = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.new_git_name).grid(row=2, column=1, sticky="ew", padx=8, pady=8)
-
-        ttk.Label(frame, text="Git user.email").grid(row=3, column=0, sticky="w", padx=8, pady=8)
         self.new_git_email = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.new_git_email).grid(row=3, column=1, sticky="ew", padx=8, pady=8)
 
-        ttk.Button(frame, text="Save Profile", command=self.save_profile).grid(
-            row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=8
+        self._row_label(form_card, "Profile name", 0)
+        tb.Entry(form_card, textvariable=self.new_profile_name).grid(
+            row=0, column=1, sticky="ew", padx=8, pady=6
         )
 
-        self.profiles_tree = ttk.Treeview(frame, columns=("name", "git_name", "email", "token"), show="headings")
+        self._row_label(form_card, "GitHub token", 1)
+        tb.Entry(form_card, textvariable=self.new_token, show="\u2022").grid(
+            row=1, column=1, sticky="ew", padx=8, pady=6
+        )
+
+        self._row_label(form_card, "Git user.name", 2)
+        tb.Entry(form_card, textvariable=self.new_git_name).grid(
+            row=2, column=1, sticky="ew", padx=8, pady=6
+        )
+
+        self._row_label(form_card, "Git user.email", 3)
+        tb.Entry(form_card, textvariable=self.new_git_email).grid(
+            row=3, column=1, sticky="ew", padx=8, pady=6
+        )
+
+        tb.Button(
+            form_card,
+            text="\u2714  Save Profile",
+            bootstyle=PRIMARY,
+            command=self.save_profile,
+        ).grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(10, 4))
+
+        list_card = tb.Labelframe(parent, text="  Saved Profiles  ", style="Card.TLabelframe")
+        list_card.grid(row=1, column=0, sticky="nsew")
+        parent.rowconfigure(1, weight=1)
+        list_card.columnconfigure(0, weight=1)
+        list_card.rowconfigure(0, weight=1)
+
+        self.profiles_tree = tb.Treeview(
+            list_card,
+            columns=("name", "git_name", "email", "token"),
+            show="headings",
+            bootstyle=PRIMARY,
+        )
         self.profiles_tree.heading("name", text="Name")
         self.profiles_tree.heading("git_name", text="Git User Name")
         self.profiles_tree.heading("email", text="Email")
         self.profiles_tree.heading("token", text="Token")
-        self.profiles_tree.grid(row=5, column=0, columnspan=2, sticky="nsew", padx=8, pady=8)
-        frame.rowconfigure(5, weight=1)
+        self.profiles_tree.column("name", width=160, anchor="w")
+        self.profiles_tree.column("git_name", width=180, anchor="w")
+        self.profiles_tree.column("email", width=240, anchor="w")
+        self.profiles_tree.column("token", width=160, anchor="w")
+        self.profiles_tree.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
 
-    def _build_handoff_tab(self, frame: ttk.Frame) -> None:
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(1, weight=1)
-        buttons = ttk.Frame(frame)
-        buttons.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
-        ttk.Button(buttons, text="Preview Handoff", command=self.preview_handoff).pack(side=tk.LEFT, padx=4)
-        ttk.Button(buttons, text="Copy Handoff to Clipboard", command=self.copy_handoff).pack(side=tk.LEFT, padx=4)
+    def _build_handoff_tab(self, parent: "tb.Frame") -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
 
-        self.handoff_text = scrolledtext.ScrolledText(frame, wrap=tk.WORD)
-        self.handoff_text.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+        action_card = tb.Frame(parent)
+        action_card.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        tb.Label(
+            action_card,
+            text="Generate a handoff prompt with recent commits, branch, and progress notes.",
+            style="Muted.TLabel",
+        ).pack(side=LEFT, padx=(2, 0))
+
+        tb.Button(
+            action_card,
+            text="\U0001f441  Preview",
+            bootstyle=(OUTLINE, INFO),
+            command=self.preview_handoff,
+            width=14,
+        ).pack(side=RIGHT, padx=(8, 0))
+        tb.Button(
+            action_card,
+            text="\u2398  Copy to Clipboard",
+            bootstyle=SUCCESS,
+            command=self.copy_handoff,
+            width=20,
+        ).pack(side=RIGHT)
+
+        text_card = tb.Labelframe(parent, text="  Handoff Preview  ", style="Card.TLabelframe")
+        text_card.grid(row=1, column=0, sticky="nsew")
+        text_card.columnconfigure(0, weight=1)
+        text_card.rowconfigure(0, weight=1)
+
+        self.handoff_text = scrolledtext.ScrolledText(
+            text_card,
+            wrap=WORD,
+            font=FONT_MONO,
+            relief="flat",
+            borderwidth=0,
+        )
+        self.handoff_text.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+
+    def _build_log(self, parent: "tb.Frame") -> None:
+        log_card = tb.Labelframe(parent, text="  Activity Log  ", style="Card.TLabelframe")
+        log_card.pack(fill=X, side=tk.BOTTOM, pady=(12, 0))
+
+        self.output = scrolledtext.ScrolledText(
+            log_card,
+            height=5,
+            wrap=WORD,
+            font=FONT_MONO,
+            relief="flat",
+            borderwidth=0,
+        )
+        self.output.pack(fill=X, expand=False, padx=4, pady=4)
+
+    # --------------------------------------------------------------- helpers
+    def _row_label(self, parent: "tb.Frame", text: str, row: int) -> None:
+        tb.Label(parent, text=text, style="Muted.TLabel").grid(
+            row=row, column=0, sticky="w", padx=(4, 8), pady=6
+        )
+
+    def _status_row(
+        self,
+        parent: "tb.Frame",
+        row: int,
+        label: str,
+        value_var: tk.StringVar,
+        getter: Callable[[], str],
+    ) -> None:
+        dot = tb.Label(parent, text="\u25cf", font=(UI_FONT_FAMILY, 14), bootstyle=SECONDARY)
+        dot.grid(row=row, column=0, sticky="w", padx=(8, 10), pady=6)
+        tb.Label(parent, text=label, style="Muted.TLabel").grid(
+            row=row, column=1, sticky="w", padx=(0, 16), pady=6
+        )
+        tb.Label(parent, textvariable=value_var, style="Value.TLabel").grid(
+            row=row, column=2, sticky="w", pady=6
+        )
+        self._status_dots.append((dot, getter))
+
+    def _refresh_status_dots(self) -> None:
+        for dot, getter in self._status_dots:
+            value = (getter() or "").strip()
+            if value and value != "-":
+                dot.configure(bootstyle=SUCCESS)
+            else:
+                dot.configure(bootstyle=SECONDARY)
+
+    def _refresh_header_chip(self) -> None:
+        active = (self.status_profile_var.get() or "").strip()
+        if active and active != "-":
+            self.header_chip_var.set(f"\u25cf  {active}")
+        else:
+            self.header_chip_var.set("No active profile")
+
+    # ------------------------------------------------------------- behaviour
+    def toggle_theme(self) -> None:
+        self.is_dark = not self.is_dark
+        self.root.style.theme_use(DARK_THEME if self.is_dark else LIGHT_THEME)
+        self._configure_styles()
+        # Re-color the header (raw tk widgets don't follow ttk themes)
+        primary = self.root.style.colors.primary
+        for widget in self._header_widgets:
+            try:
+                widget.configure(bg=primary)
+            except tk.TclError:
+                pass
+        try:
+            self.header_chip.configure(bg="#ffffff", fg=primary)
+        except tk.TclError:
+            pass
+        self.theme_btn.configure(text="\u2600  Light" if self.is_dark else "\u263d  Dark")
+        self._refresh_status_dots()
 
     def log(self, message: str) -> None:
         self.output_queue.put(message)
@@ -156,8 +527,8 @@ class DevsyncGui:
     def _poll_output(self) -> None:
         while not self.output_queue.empty():
             message = self.output_queue.get()
-            self.output.insert(tk.END, f"{message}\n")
-            self.output.see(tk.END)
+            self.output.insert(END, f"{message}\n")
+            self.output.see(END)
         self.root.after(100, self._poll_output)
 
     def run_background(self, task: Callable[[], None]) -> None:
@@ -191,7 +562,7 @@ class DevsyncGui:
             profile = profiles[name]
             self.profiles_tree.insert(
                 "",
-                tk.END,
+                END,
                 values=(
                     name,
                     profile.get("git_user_name", ""),
@@ -201,15 +572,13 @@ class DevsyncGui:
             )
 
     def refresh_status(self) -> None:
-        self.status_tree.delete(*self.status_tree.get_children())
         data = get_status_data()
-        for field, value in [
-            ("Active profile", data["active_profile"]),
-            ("Git user", data["git_user"]),
-            ("Current repo", data["current_repo"]),
-            ("Current branch", data["current_branch"]),
-        ]:
-            self.status_tree.insert("", tk.END, values=(field, value))
+        self.status_profile_var.set(data["active_profile"])
+        self.status_user_var.set(data["git_user"])
+        self.status_repo_var.set(data["current_repo"])
+        self.status_branch_var.set(data["current_branch"])
+        self._refresh_status_dots()
+        self._refresh_header_chip()
 
     def save_profile(self) -> None:
         name = self.new_profile_name.get().strip()
@@ -282,7 +651,7 @@ class DevsyncGui:
             messagebox.showwarning("Missing folder", f"Repo folder does not exist:\n{path}")
             return
         if hasattr(os, "startfile"):
-            os.startfile(path)
+            os.startfile(path)  # type: ignore[attr-defined]
         else:
             self.log(f"Repo folder: {path}")
 
@@ -292,8 +661,8 @@ class DevsyncGui:
         except DevsyncError as exc:
             messagebox.showerror("Handoff error", str(exc))
             return
-        self.handoff_text.delete("1.0", tk.END)
-        self.handoff_text.insert(tk.END, prompt)
+        self.handoff_text.delete("1.0", END)
+        self.handoff_text.insert(END, prompt)
         self.log("Handoff preview generated.")
 
     def copy_handoff(self) -> None:
@@ -302,20 +671,21 @@ class DevsyncGui:
         except DevsyncError as exc:
             messagebox.showerror("Handoff error", str(exc))
             return
-        self.handoff_text.delete("1.0", tk.END)
-        self.handoff_text.insert(tk.END, prompt)
+        self.handoff_text.delete("1.0", END)
+        self.handoff_text.insert(END, prompt)
         self.log("Handoff prompt copied to clipboard!")
         messagebox.showinfo("Copied", "Handoff prompt copied to clipboard!")
 
 
 def main() -> None:
-    if TKINTER_IMPORT_ERROR:
+    if GUI_IMPORT_ERROR:
         raise SystemExit(
-            "Tkinter is not available in this Python installation. "
-            "Install Python from python.org with Tcl/Tk support, then reinstall devsync."
-        ) from TKINTER_IMPORT_ERROR
+            "GUI dependencies are not available. Make sure Python is installed "
+            "with Tcl/Tk support and that the optional `ttkbootstrap` package is "
+            "installed (it is included in devsync's pyproject dependencies)."
+        ) from GUI_IMPORT_ERROR
 
-    root = tk.Tk()
+    root = tb.Window(themename=LIGHT_THEME)
     DevsyncGui(root)
     root.mainloop()
 
