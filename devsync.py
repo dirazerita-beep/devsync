@@ -20,7 +20,8 @@ PROFILES_FILE = APP_DIR / "profiles.json"
 CONFIG_FILE = APP_DIR / "config.json"
 PROGRESS_FILE = "DEVIN_PROGRESS.md"
 
-PROGRESS_TEMPLATE = """# Devin Progress Notes
+PROGRESS_TEMPLATE = """---
+# Devin Progress Notes
 
 ## ✅ Completed
 - 
@@ -36,6 +37,7 @@ PROGRESS_TEMPLATE = """# Devin Progress Notes
 
 ## ⚠️ Known Bugs / Blockers
 - 
+---
 """
 
 console = Console()
@@ -351,7 +353,8 @@ def handoff() -> None:
     progress_path = repo_path / PROGRESS_FILE
     progress = progress_path.read_text(encoding="utf-8") if progress_path.exists() else "(DEVIN_PROGRESS.md not found)"
 
-    prompt = f"""===== PASTE THIS TO NEW DEVIN SESSION =====
+    prompt = f"""---
+===== PASTE THIS TO NEW DEVIN SESSION =====
 
 You are continuing work on this project.
 Repo: {repo_url}
@@ -370,6 +373,7 @@ INSTRUCTIONS:
 - Update DEVIN_PROGRESS.md before ending each session
 - Commit and push with: git commit -am "progress: update session notes"
 ===========================================
+---
 """
 
     pyperclip.copy(prompt)
