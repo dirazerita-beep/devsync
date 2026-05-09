@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "devsync"
-version = "0.1.0"
-description = "Local CLI for GitHub credential profiles and Devin handoffs."
+version = "0.2.0"
+description = "Local CLI and modern GUI for GitHub credential profiles and Devin handoffs."
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
     "typer",
     "rich",
     "pyperclip",
+    "ttkbootstrap>=1.10",
 ]
 
 [project.scripts]

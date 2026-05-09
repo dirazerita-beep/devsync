@@ -39,13 +39,19 @@ python -m devsync_gui
 On Windows, use a normal Python installer from python.org with Tcl/Tk enabled.
 If your Python does not include Tkinter, the GUI will show a Tkinter support error.
 
+The GUI uses [`ttkbootstrap`](https://ttkbootstrap.readthedocs.io/) to provide a
+modern look with a header bar, card-based layout, color-coded action buttons,
+status indicators with colored dots, and a one-click **Light / Dark** theme toggle.
+
 The GUI lets you:
 
 - Save GitHub credential profiles.
 - Save a default repo URL.
+- Choose the local parent folder where the repo should live.
 - Clone or pull a repo with one button.
-- View active profile, repo, and branch status.
-- Generate and copy the Devin handoff prompt.
+- View active profile, repo, and branch status with at-a-glance dot indicators.
+- Generate, preview, and copy the Devin handoff prompt.
+- Switch between a clean light theme (`cosmo`) and a dark theme (`darkly`).
 
 Recommended GUI flow:
 
