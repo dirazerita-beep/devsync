@@ -24,7 +24,25 @@ Requires Python 3.8+.
 
 ## GUI mode
 
-For the easiest workflow, open the desktop GUI:
+### One-click launchers
+
+The repo ships with click-and-go launchers so you do not have to use a terminal
+once Python is installed:
+
+- **Windows**: double-click `run-devsync-gui.bat` in the repo folder.
+- **macOS / Linux**: `chmod +x run-devsync-gui.sh` once, then double-click
+  `run-devsync-gui.sh` from your file manager (or run `./run-devsync-gui.sh`).
+
+The first run will automatically install `devsync` and its dependencies in
+editable mode (`pip install -e .`). Subsequent runs skip the install step and
+just launch the GUI.
+
+> Tip (Windows): right-click `run-devsync-gui.bat` → **Send to → Desktop (create
+> shortcut)** to get a real one-click icon on your desktop.
+
+### Manual launch
+
+If you prefer the terminal, the standard entry points still work:
 
 ```bash
 devsync-gui
