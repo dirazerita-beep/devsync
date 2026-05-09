@@ -40,6 +40,27 @@ just launch the GUI.
 > Tip (Windows): right-click `run-devsync-gui.bat` → **Send to → Desktop (create
 > shortcut)** to get a real one-click icon on your desktop.
 
+### Build a standalone .exe (for distribution)
+
+If you want to share the app with users who do not have Python, double-click
+`build-distributable.bat` (Windows) or run `./build-distributable.sh`
+(macOS / Linux). It uses [PyInstaller](https://pyinstaller.org/) to bundle the
+GUI into a single executable and drops the result into a folder named
+`Hasil Build/`:
+
+```
+Hasil Build/
+├── devsync-gui.exe        (Windows; single-file, no Python required)
+└── Cara Pakai.txt         (Indonesian usage notes for end users)
+```
+
+Right-click the `Hasil Build` folder → **Send to → Compressed (zipped) folder**,
+and you have a single zip you can share with anyone. The recipient just
+extracts the zip and double-clicks `devsync-gui.exe` — no install, no Python.
+
+PyInstaller can only build for the host platform, so run the builder on
+Windows to produce a `.exe`, on macOS to produce a macOS binary, etc.
+
 ### Manual launch
 
 If you prefer the terminal, the standard entry points still work:

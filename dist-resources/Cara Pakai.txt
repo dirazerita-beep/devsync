@@ -1,0 +1,32 @@
+devsync — portable build
+=========================
+
+Cara pakai:
+
+1. Klik dua kali file devsync-gui.exe (di Windows) atau devsync-gui
+   (di macOS / Linux) untuk menjalankan aplikasinya.
+
+2. Tidak perlu install Python atau dependency apapun. Semua sudah
+   ter-bundle di dalam file executable ini.
+
+3. Konfigurasi (profil GitHub, kunci enkripsi, dll) tersimpan di
+   folder "~/.devsync" (Windows: "C:\Users\<nama-user>\.devsync") —
+   bukan di folder build ini. Jadi Anda boleh memindahkan / menghapus
+   folder ini kapan saja tanpa kehilangan profil.
+
+4. Catatan Windows: kalau Windows SmartScreen menolak file karena
+   "publisher tidak dikenal", klik "More info" lalu "Run anyway".
+   Ini wajar untuk binary yang belum ditandatangani secara resmi.
+
+5. Catatan macOS: kalau Anda lihat "cannot be opened because it is
+   from an unidentified developer", klik kanan file -> Open -> Open.
+
+Tentang aplikasi:
+- devsync membantu mengelola beberapa profil kredensial GitHub dan
+  memudahkan switching saat pindah antar sesi Devin.
+- Gunakan tab "Profiles" untuk menambah profil, "Repo Sync" untuk
+  clone/pull repo dengan profil yang dipilih, dan "Handoff" untuk
+  generate prompt continuity ke sesi Devin baru.
+- Toggle Light/Dark theme tersedia di kanan atas.
+
+Source code: https://github.com/dirazerita-beep/devsync
