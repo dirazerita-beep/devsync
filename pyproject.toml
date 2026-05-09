@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devsync"
+version = "0.1.0"
+description = "Local CLI for GitHub credential profiles and Devin handoffs."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "cryptography",
+    "typer",
+    "rich",
+    "pyperclip",
+]
+
+[project.scripts]
+devsync = "devsync:app"
+
+[tool.setuptools]
+py-modules = ["devsync"]
