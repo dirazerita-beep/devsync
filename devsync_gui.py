@@ -4,6 +4,7 @@ import os
 import platform
 import queue
 import threading
+import webbrowser
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -75,6 +76,10 @@ FONT_VALUE_BOLD = (UI_FONT_FAMILY, 10, "bold")
 FONT_CHIP = (UI_FONT_FAMILY, 9, "bold")
 FONT_BUTTON = (UI_FONT_FAMILY, 9, "bold")
 FONT_MONO = (MONO_FONT_FAMILY, 9)
+FONT_FOOTER = (UI_FONT_FAMILY, 9)
+FONT_FOOTER_BOLD = (UI_FONT_FAMILY, 9, "bold")
+
+VIBETOOL_URL = "https://vibetool.club"
 
 
 class DevsyncGui:
@@ -176,6 +181,9 @@ class DevsyncGui:
         outer.pack(fill=BOTH, expand=True)
 
         self._build_header(outer)
+        # Footer must be packed before the body so side=BOTTOM claims its
+        # height before the body's expand=True takes the rest.
+        self._build_footer(outer)
         self._build_body(outer)
 
     def _build_header(self, parent: "tb.Frame") -> None:
@@ -230,6 +238,83 @@ class DevsyncGui:
         self.theme_btn.pack(side=LEFT)
 
         self._header_widgets = [header, inner, left, right, title, subtitle]
+
+    def _build_footer(self, parent: "tb.Frame") -> None:
+        # Subtle branding bar pinned to the bottom of every tab.
+        footer_bg = self.root.style.colors.primary
+        muted_fg = "#dbe1ea"
+        accent_fg = "#ffffff"
+
+        footer = tk.Frame(parent, bg=footer_bg)
+        footer.pack(fill=X, side=tk.BOTTOM)
+
+        inner = tk.Frame(footer, bg=footer_bg)
+        inner.pack(pady=8)
+
+        powered_lbl = tk.Label(
+            inner,
+            text="Powered by ",
+            font=FONT_FOOTER,
+            bg=footer_bg,
+            fg=muted_fg,
+        )
+        powered_lbl.pack(side=LEFT)
+
+        link_lbl = tk.Label(
+            inner,
+            text="VibeTool.Club",
+            font=FONT_FOOTER_BOLD,
+            bg=footer_bg,
+            fg=accent_fg,
+            cursor="hand2",
+        )
+        link_lbl.pack(side=LEFT)
+        link_lbl.bind("<Button-1>", lambda _e: webbrowser.open(VIBETOOL_URL))
+        link_lbl.bind(
+            "<Enter>",
+            lambda _e: link_lbl.configure(font=(UI_FONT_FAMILY, 9, "bold underline")),
+        )
+        link_lbl.bind(
+            "<Leave>",
+            lambda _e: link_lbl.configure(font=FONT_FOOTER_BOLD),
+        )
+
+        sep_lbl = tk.Label(
+            inner,
+            text="   \u2022   ",
+            font=FONT_FOOTER,
+            bg=footer_bg,
+            fg=muted_fg,
+        )
+        sep_lbl.pack(side=LEFT)
+
+        created_lbl = tk.Label(
+            inner,
+            text="Created by ",
+            font=FONT_FOOTER,
+            bg=footer_bg,
+            fg=muted_fg,
+        )
+        created_lbl.pack(side=LEFT)
+
+        author_lbl = tk.Label(
+            inner,
+            text="Pak Dosen",
+            font=FONT_FOOTER_BOLD,
+            bg=footer_bg,
+            fg=accent_fg,
+        )
+        author_lbl.pack(side=LEFT)
+
+        self._footer_widgets = [
+            footer,
+            inner,
+            powered_lbl,
+            link_lbl,
+            sep_lbl,
+            created_lbl,
+            author_lbl,
+        ]
 
     def _build_body(self, parent: "tb.Frame") -> None:
         body = tb.Frame(parent, padding=(16, 14, 16, 14))
@@ -518,6 +603,12 @@ class DevsyncGui:
             self.header_chip.configure(bg="#ffffff", fg=primary)
         except tk.TclError:
             pass
+        # Re-color the footer to match the new primary background.
+        for widget in getattr(self, "_footer_widgets", []):
+            try:
+                widget.configure(bg=primary)
+            except tk.TclError:
+                pass
         self.theme_btn.configure(text="\u2600  Light" if self.is_dark else "\u263d  Dark")
         self._refresh_status_dots()
 
