@@ -22,6 +22,40 @@ Requires Python 3.8+.
 
 ## Commands
 
+## GUI mode
+
+For the easiest workflow, open the desktop GUI:
+
+```bash
+devsync-gui
+```
+
+If Windows does not recognize `devsync-gui`, run it from the repo folder with:
+
+```bash
+python -m devsync_gui
+```
+
+On Windows, use a normal Python installer from python.org with Tcl/Tk enabled.
+If your Python does not include Tkinter, the GUI will show a Tkinter support error.
+
+The GUI lets you:
+
+- Save GitHub credential profiles.
+- Save a default repo URL.
+- Clone or pull a repo with one button.
+- View active profile, repo, and branch status.
+- Generate and copy the Devin handoff prompt.
+
+Recommended GUI flow:
+
+1. Open `devsync-gui`.
+2. Go to **Profiles** and save your profile.
+3. Go to **Repo Sync** and enter the GitHub repo URL.
+4. Click **Save Default Repo**.
+5. Click **Clone / Pull Repo**.
+6. Click **Copy Handoff** when you want to continue in a new Devin session.
+
 ### Add a profile
 
 ```bash

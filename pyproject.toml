@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 devsync = "devsync:app"
+devsync-gui = "devsync_gui:main"
 
 [tool.setuptools]
-py-modules = ["devsync"]
+py-modules = ["devsync", "devsync_gui"]
