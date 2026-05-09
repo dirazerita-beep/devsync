@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -208,7 +209,7 @@ def summarize_changed_files(repo_path: Path, before: str, after: str) -> str:
 
 @profile_app.command("add")
 def add_profile(name: str) -> None:
-    github_token = typer.prompt("github_token", hide_input=True)
+    github_token = typer.prompt("github_token", hide_input=sys.stdin.isatty())
     git_user_name = typer.prompt("git_user_name")
     git_user_email = typer.prompt("git_user_email")
 
