@@ -314,6 +314,106 @@ def get_status_data() -> Dict[str, str]:
     }
 
 
+DEFAULT_COMMIT_MESSAGE = "progress: update session notes"
+
+
+def push_local_data(
+    message: Optional[str] = None,
+    on_output: Optional[Callable[[str], None]] = None,
+) -> Dict[str, str]:
+    config = load_config()
+    repo_url = config.get("active_repo") or config.get("default_repo")
+    if not repo_url:
+        raise DevsyncError("No active repo configured. Run `devsync use <profile>` first.")
+
+    repo_path = get_active_repo_path(config)
+    if not repo_path.exists() or not (repo_path / ".git").exists():
+        raise DevsyncError(
+            f"Active repo not found at {repo_path}. Run `devsync use` first to clone or pull."
+        )
+
+    active_profile = config.get("active_profile")
+    profiles = load_profiles()
+    if not active_profile or active_profile not in profiles:
+        raise DevsyncError(
+            "No active profile. Run `devsync use <profile>` first to set credentials."
+        )
+    profile = profiles[active_profile]
+    token = profile["github_token"]
+
+    _, _, normalized_url = parse_repo_url(repo_url)
+    token_url = auth_repo_url(normalized_url, token)
+
+    def emit(text: str) -> None:
+        if on_output:
+            on_output(text)
+
+    run_checked(
+        ["git", "remote", "set-url", "origin", token_url],
+        cwd=repo_path,
+        secrets=[token],
+    )
+
+    branch = git_output(["branch", "--show-current"], repo_path) or ""
+    if not branch:
+        raise DevsyncError(
+            "Cannot push from a detached HEAD. Checkout a branch first."
+        )
+
+    commit_message = (message or "").strip() or DEFAULT_COMMIT_MESSAGE
+    status_out = git_output(["status", "--porcelain"], repo_path)
+
+    committed = False
+    if status_out:
+        run_checked(["git", "add", "-A"], cwd=repo_path, secrets=[token])
+        commit = run_command(
+            ["git", "commit", "-m", commit_message],
+            cwd=repo_path,
+            check=False,
+        )
+        combined = "\n".join(
+            part for part in [commit.stdout.strip(), commit.stderr.strip()] if part
+        )
+        if commit.returncode != 0:
+            if "nothing to commit" not in combined.lower():
+                raise DevsyncError(redact_sensitive(combined or "git commit failed.", [token]))
+        else:
+            committed = True
+            if combined:
+                emit(redact_sensitive(combined, [token]))
+
+    push = run_command(
+        ["git", "push", "origin", branch],
+        cwd=repo_path,
+        check=False,
+    )
+    push_output = "\n".join(
+        part for part in [push.stdout.strip(), push.stderr.strip()] if part
+    )
+    if push.returncode != 0:
+        raise DevsyncError(redact_sensitive(push_output or "git push failed.", [token]))
+
+    if push_output:
+        emit(redact_sensitive(push_output, [token]))
+
+    if committed:
+        summary = f"Committed and pushed branch {branch} to {normalized_url}."
+    elif status_out:
+        summary = f"Pushed branch {branch} to {normalized_url} (no new commit created)."
+    else:
+        summary = f"No local changes. Pushed branch {branch} to {normalized_url}."
+
+    return {
+        "branch": branch,
+        "repo": normalized_url,
+        "local_path": str(repo_path),
+        "commit_message": commit_message,
+        "committed": "yes" if committed else "no",
+        "had_changes": "yes" if status_out else "no",
+        "summary": summary,
+    }
+
+
 def build_handoff_prompt() -> str:
     config = load_config()
     repo_url = config.get("active_repo") or config.get("default_repo")
@@ -436,6 +536,29 @@ def handoff() -> None:
         console.print(str(exc), style="red")
         raise typer.Exit(1) from exc
     console.print("Handoff prompt copied to clipboard!")
+
+
+@app.command("push")
+def push_command(
+    message: Optional[str] = typer.Option(
+        None,
+        "--message",
+        "-m",
+        help="Commit message for any pending local changes.",
+    ),
+) -> None:
+    try:
+        result = push_local_data(message=message, on_output=console.print)
+    except DevsyncError as exc:
+        console.print(str(exc), style="red")
+        raise typer.Exit(1) from exc
+
+    console.print(f"\n[bold green]{result['summary']}[/bold green]")
+    console.print(f"Branch: {result['branch']}")
+    console.print(f"Repo: {result['repo']}")
+    console.print(f"Local path: {result['local_path']}")
+    if result["committed"] == "yes":
+        console.print(f"Commit message: {result['commit_message']}")
 
 
 if __name__ == "__main__":
