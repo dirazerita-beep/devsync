@@ -10,7 +10,7 @@ from typing import Callable, List, Optional
 
 try:
     import tkinter as tk
-    from tkinter import filedialog, messagebox, scrolledtext
+    from tkinter import filedialog, messagebox, scrolledtext, simpledialog
 
     import ttkbootstrap as tb
     from ttkbootstrap.constants import (
@@ -40,6 +40,7 @@ else:
     GUI_IMPORT_ERROR = None
 
 from devsync import (
+    DEFAULT_COMMIT_MESSAGE,
     DevsyncError,
     PROGRESS_FILE,
     build_handoff_prompt,
@@ -48,6 +49,7 @@ from devsync import (
     load_config,
     load_profiles,
     mask_token,
+    push_local_data,
     save_profile_data,
     set_default_repo_data,
     use_profile_data,
@@ -388,7 +390,7 @@ class DevsyncGui:
 
         actions_card = tb.Labelframe(parent, text="  Actions  ", style="Card.TLabelframe")
         actions_card.grid(row=1, column=0, sticky="ew", pady=(0, 12))
-        for col in range(4):
+        for col in range(5):
             actions_card.columnconfigure(col, weight=1)
 
         tb.Button(
@@ -399,22 +401,28 @@ class DevsyncGui:
         ).grid(row=0, column=0, sticky="ew", padx=4, pady=2)
         tb.Button(
             actions_card,
+            text="\u21c8  Push to Repo",
+            bootstyle=WARNING,
+            command=self.push_to_repo,
+        ).grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+        tb.Button(
+            actions_card,
             text="\u24d8  Show Status",
             bootstyle=INFO,
             command=self.show_status,
-        ).grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+        ).grid(row=0, column=2, sticky="ew", padx=4, pady=2)
         tb.Button(
             actions_card,
             text="\U0001f4c1  Open Repo Folder",
             bootstyle=SECONDARY,
             command=self.open_repo_folder,
-        ).grid(row=0, column=2, sticky="ew", padx=4, pady=2)
+        ).grid(row=0, column=3, sticky="ew", padx=4, pady=2)
         tb.Button(
             actions_card,
             text="\u2398  Copy Handoff",
             bootstyle=SUCCESS,
             command=self.copy_handoff,
-        ).grid(row=0, column=3, sticky="ew", padx=4, pady=2)
+        ).grid(row=0, column=4, sticky="ew", padx=4, pady=2)
 
         status_card = tb.Labelframe(parent, text="  Current Status  ", style="Card.TLabelframe")
         status_card.grid(row=2, column=0, sticky="nsew")
@@ -724,6 +732,51 @@ class DevsyncGui:
             self.log(result["changed_summary"])
             self.root.after(0, self.refresh_all)
             self.root.after(0, lambda: messagebox.showinfo("Repo ready", f"Repo ready at:\n{result['local_path']}"))
+
+        self.run_background(task)
+
+    def push_to_repo(self) -> None:
+        config = load_config()
+        active_profile = config.get("active_profile")
+        if not active_profile:
+            messagebox.showwarning(
+                "No active profile",
+                "Run Clone / Pull Repo first to set an active profile.",
+            )
+            return
+
+        repo_path = config.get("active_repo_path")
+        if not repo_path or not Path(repo_path).exists():
+            messagebox.showwarning(
+                "No active repo",
+                "Run Clone / Pull Repo first to set the active repo.",
+            )
+            return
+
+        message = simpledialog.askstring(
+            "Push to Repo",
+            "Commit message for any pending local changes:",
+            initialvalue=DEFAULT_COMMIT_MESSAGE,
+            parent=self.root,
+        )
+        if message is None:
+            return
+
+        self.log("Starting push...")
+
+        def task() -> None:
+            result = push_local_data(message=message, on_output=self.log)
+            self.log(result["summary"])
+            self.log(f"Branch: {result['branch']}")
+            self.log(f"Repo: {result['repo']}")
+            self.log(f"Local path: {result['local_path']}")
+            if result["committed"] == "yes":
+                self.log(f"Commit message: {result['commit_message']}")
+            self.root.after(0, self.refresh_all)
+            self.root.after(
+                0,
+                lambda: messagebox.showinfo("Push complete", result["summary"]),
+            )
 
         self.run_background(task)
 
